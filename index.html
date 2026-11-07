@@ -1,0 +1,1894 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>嘉義市動態島 18 · CHIAYI CITY 23.48°N</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js r128 & OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- Google Fonts: Noto Sans TC & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Outfit', 'Noto Sans TC', sans-serif;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #bceeff;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #canvas-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+    }
+    /* 米白毛玻璃卡片核心樣式 */
+    .glass-card-warm {
+      background: rgba(252, 249, 242, 0.94);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(230, 222, 210, 0.85);
+      box-shadow: 0 16px 36px -10px rgba(70, 52, 38, 0.12), 0 4px 10px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(255, 255, 255, 0.7) inset;
+    }
+    /* HTML 3D 名牌浮動標籤 */
+    .landmark-label {
+      position: absolute;
+      transform: translate(-50%, -100%);
+      pointer-events: auto;
+      cursor: pointer;
+      z-index: 20;
+      transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.25s ease, box-shadow 0.2s ease;
+      will-change: transform, left, top;
+    }
+    .landmark-label:hover {
+      transform: translate(-50%, -115%) scale(1.08);
+      z-index: 30;
+    }
+    .landmark-label.active {
+      transform: translate(-50%, -120%) scale(1.15);
+      box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.25), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+      z-index: 40;
+    }
+    .landmark-label.dimmed {
+      opacity: 0.22;
+      filter: grayscale(80%);
+      pointer-events: none;
+    }
+    /* 滾動條美化 */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.03);
+      border-radius: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(180, 165, 150, 0.45);
+      border-radius: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(180, 165, 150, 0.75);
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    /* 底部控制列 Dock 樣式 */
+    .dock-btn {
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      background-color: #ffffff;
+      color: #57534e;
+      border: 1px solid #e7e5e4;
+    }
+    .dock-btn:hover {
+      background-color: #f7f5f2;
+      transform: translateY(-1px);
+    }
+    .dock-btn.active {
+      background-color: #f8d7d2 !important;
+      color: #c83e2b !important;
+      border-color: #f0aca2 !important;
+      font-weight: 700;
+      box-shadow: 0 2px 8px -1px rgba(200, 62, 43, 0.25);
+    }
+    /* 自訂拉桿樣式 */
+    input[type=range].time-slider {
+      -webkit-appearance: none;
+      background: #e7e5e4;
+      height: 6px;
+      border-radius: 9999px;
+      outline: none;
+    }
+    input[type=range].time-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: #c83e2b;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(200, 62, 43, 0.45);
+      transition: transform 0.15s ease;
+    }
+    input[type=range].time-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.22);
+    }
+    /* 呼吸紅點動畫 */
+    @keyframes pulse-dot {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.35); opacity: 0.6; }
+    }
+    .live-pulse {
+      animation: pulse-dot 1.8s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="w-screen h-screen relative overflow-hidden select-none">
+
+  <!-- 3D WebGL Canvas 容器 -->
+  <div id="canvas-container"></div>
+
+  <!-- 3D 投影浮動 HTML 標籤放置層 -->
+  <div id="labels-layer" class="absolute inset-0 pointer-events-none z-10 overflow-hidden"></div>
+
+  <!-- =================================================================
+       1. 【左上角主卡片】：嘉義市動態島 18 介紹與 5 色分類篩選膠囊
+       ================================================================= -->
+  <div class="absolute top-4 left-4 md:top-5 md:left-5 z-30 w-[92vw] sm:w-[350px] pointer-events-auto">
+    <div class="glass-card-warm rounded-3xl p-4 md:p-5 transition-all duration-300 shadow-xl" id="main-header-card">
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <div class="flex items-center gap-1.5 text-[11px] font-mono font-bold text-amber-800 tracking-wider">
+            <span>CHIAYI CITY</span>
+            <span>·</span>
+            <span>23.48°N</span>
+          </div>
+          <h1 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight mt-0.5">
+            嘉義市動態島 <span class="text-[#c83e2b]">18</span>
+          </h1>
+        </div>
+        <button id="btn-toggle-main-card" title="收合卡片" class="w-7 h-7 rounded-full bg-stone-200/60 hover:bg-stone-300/80 text-stone-700 flex items-center justify-center text-xs font-bold transition active:scale-90">
+          <span id="main-card-arrow">∧</span>
+        </button>
+      </div>
+
+      <div id="main-card-body" class="transition-all duration-300 overflow-hidden mt-2.5">
+        <p class="text-xs text-stone-600 leading-relaxed">
+          從北門驛的林鐵到蘭潭的水，一格一個地方。點一格，看它和哪些地方連在一起。
+        </p>
+
+        <!-- 5 個彩色圓點分類篩選膠囊 -->
+        <div class="flex flex-wrap gap-1.5 mt-3.5 pt-3 border-t border-stone-200/70">
+          <button class="filter-pill active text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-900 text-white transition flex items-center gap-1.5 shadow-sm" data-category="all">
+            <span>全部</span>
+          </button>
+          <button class="filter-pill text-[11px] font-medium px-2.5 py-1 rounded-full bg-white text-stone-700 border border-stone-200 hover:bg-stone-50 transition flex items-center gap-1.5" data-category="railway">
+            <span class="w-2 h-2 rounded-full bg-[#d4822a]"></span>林業鐵道
+          </button>
+          <button class="filter-pill text-[11px] font-medium px-2.5 py-1 rounded-full bg-white text-stone-700 border border-stone-200 hover:bg-stone-50 transition flex items-center gap-1.5" data-category="flavor">
+            <span class="w-2 h-2 rounded-full bg-[#d15b3e]"></span>舊城滋味
+          </button>
+          <button class="filter-pill text-[11px] font-medium px-2.5 py-1 rounded-full bg-white text-stone-700 border border-stone-200 hover:bg-stone-50 transition flex items-center gap-1.5" data-category="park">
+            <span class="w-2 h-2 rounded-full bg-[#3b8a5a]"></span>公園綠水
+          </button>
+          <button class="filter-pill text-[11px] font-medium px-2.5 py-1 rounded-full bg-white text-stone-700 border border-stone-200 hover:bg-stone-50 transition flex items-center gap-1.5" data-category="culture">
+            <span class="w-2 h-2 rounded-full bg-[#7859b8]"></span>藝文再生
+          </button>
+          <button class="filter-pill text-[11px] font-medium px-2.5 py-1 rounded-full bg-white text-stone-700 border border-stone-200 hover:bg-stone-50 transition flex items-center gap-1.5" data-category="city">
+            <span class="w-2 h-2 rounded-full bg-[#6b6057]"></span>城市發展
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================================================================
+       2. 【左下角 CITY LOG · 城市日誌 LIVE】
+       ================================================================= -->
+  <div class="absolute bottom-28 md:bottom-24 left-4 md:left-5 z-30 w-[92vw] sm:w-[360px] pointer-events-auto">
+    <div class="glass-card-warm rounded-3xl p-4 transition-all duration-300 shadow-xl" id="city-log-card">
+      <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-stone-200/70">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-black tracking-wider text-stone-800">CITY LOG</span>
+          <span class="text-[10px] text-stone-400 font-bold">·</span>
+          <span class="text-xs font-bold text-stone-600">城市日誌</span>
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 text-[#c83e2b] text-[10px] font-black tracking-wide">
+            <span class="w-1.5 h-1.5 rounded-full bg-[#c83e2b] live-pulse"></span>
+            LIVE
+          </span>
+        </div>
+        <button id="btn-toggle-log-card" title="收合日誌" class="w-6 h-6 rounded-full bg-stone-200/60 hover:bg-stone-300/80 text-stone-700 flex items-center justify-center text-[10px] font-bold transition active:scale-90">
+          <span id="log-card-arrow">∨</span>
+        </button>
+      </div>
+
+      <div id="city-log-body" class="mt-2.5 transition-all duration-300">
+        <!-- 可捲動的日誌清單 -->
+        <div id="log-list-container" class="space-y-2 max-h-[140px] md:max-h-[160px] overflow-y-auto pr-1.5 custom-scrollbar text-xs">
+          <!-- 動態由 JavaScript 生成並連動更新 -->
+        </div>
+
+        <div class="mt-2.5 pt-2 border-t border-stone-200/60 flex items-center justify-between text-[10px] text-stone-400">
+          <span>日誌為依時段生成的情境示意，不是即時資料。</span>
+          <span id="log-sync-indicator" class="font-mono text-stone-500 font-semibold">10:00</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================================================================
+       3. 【右上角「全景｜政見」切換膠囊與候選人篩選面板】
+       ================================================================= -->
+  <div class="absolute top-4 right-4 md:top-5 md:right-5 z-30 flex flex-col items-end gap-2.5 pointer-events-auto max-w-[92vw] sm:max-w-sm">
+    <!-- 切換膠囊按鈕 -->
+    <div class="glass-card-warm rounded-full p-1 shadow-lg flex items-center">
+      <button id="btn-mode-panorama" class="px-4 py-1.5 rounded-full text-xs font-extrabold tracking-wide transition bg-slate-900 text-white shadow-sm">
+        全景
+      </button>
+      <button id="btn-mode-policy" class="px-4 py-1.5 rounded-full text-xs font-bold text-stone-600 hover:text-stone-900 transition flex items-center gap-1.5">
+        <span>政見</span>
+        <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+      </button>
+    </div>
+
+    <!-- 候選人政見模式控制面板 (切換至政見時展開) -->
+    <div id="policy-panel" class="glass-card-warm rounded-3xl p-4 transition-all duration-300 shadow-xl hidden w-full text-xs">
+      <div class="flex items-center justify-between pb-2 border-b border-stone-200/70">
+        <span class="font-bold text-stone-800 text-xs">嘉義市長候選人 · 地標政見地圖</span>
+        <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold">3D 菱形標示</span>
+      </div>
+
+      <p class="text-[11px] text-stone-600 mt-2 leading-relaxed">
+        檢視候選人對嘉義市各重點軸帶的公開市政政見與願景規劃。
+      </p>
+
+      <!-- 候選人過濾按鈕 -->
+      <div class="grid grid-cols-3 gap-1.5 mt-3">
+        <button class="candidate-btn active p-2 rounded-2xl bg-white border border-stone-300 hover:bg-stone-50 transition text-center shadow-sm" data-candidate="all">
+          <div class="text-[10px] font-bold text-stone-500">全部</div>
+          <div class="font-extrabold text-stone-800 mt-0.5 text-xs">願景總覽</div>
+        </button>
+        <button class="candidate-btn p-2 rounded-2xl bg-white border border-stone-200 hover:bg-stone-50 transition text-center" data-candidate="c1">
+          <div class="text-[10px] font-bold text-blue-600 flex items-center justify-center gap-1">
+            <span class="w-2 h-2 rounded-full bg-blue-500"></span>黃敏惠
+          </div>
+          <div class="font-semibold text-stone-700 mt-0.5 text-[11px]">十大旗艦</div>
+        </button>
+        <button class="candidate-btn p-2 rounded-2xl bg-white border border-stone-200 hover:bg-stone-50 transition text-center" data-candidate="c2">
+          <div class="text-[10px] font-bold text-emerald-600 flex items-center justify-center gap-1">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>李俊俋
+          </div>
+          <div class="font-semibold text-stone-700 mt-0.5 text-[11px]">三心二軸</div>
+        </button>
+      </div>
+
+      <!-- 選定政見摘要彈性小卡 -->
+      <div id="policy-summary-box" class="mt-3 p-2.5 rounded-2xl bg-stone-100/80 border border-stone-200/80 text-[11px] text-stone-700 leading-relaxed">
+        點擊島嶼上方旋轉的彩色菱形，即可預覽該地標具體政見提案。
+      </div>
+
+      <!-- 免責聲明 -->
+      <div class="mt-2.5 pt-2 border-t border-stone-200/60 text-[10px] text-stone-400 leading-snug">
+        出處免責聲明：本政見展示資料彙整自中選會公報與歷屆候選人公開發表之新聞及競選文宣，僅供城市規劃與願景探索示意，不代表平台任何政治立場。
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部選中地標詳情卡片 (點擊地標時滑出) -->
+  <div id="detail-card" class="absolute bottom-24 md:bottom-26 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-lg glass-card-warm rounded-3xl p-4 shadow-xl transition-all duration-300 opacity-0 translate-y-8 pointer-events-none">
+    <div class="flex items-start justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div id="detail-icon-wrap" class="w-10 h-10 rounded-2xl flex items-center justify-center text-white font-black text-base shadow-sm">
+          標
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h3 id="detail-name" class="font-black text-slate-800 text-base">地標名稱</h3>
+            <span id="detail-category-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full text-white">分類</span>
+          </div>
+          <p id="detail-coords" class="text-[11px] font-mono text-stone-400 mt-0.5">GRID (0, 0) · 23.48°N</p>
+        </div>
+      </div>
+      <button id="close-detail-btn" class="w-7 h-7 rounded-full bg-stone-200/60 hover:bg-stone-300 text-stone-600 flex items-center justify-center transition active:scale-90 text-xs font-bold">
+        ✕
+      </button>
+    </div>
+    <p id="detail-desc" class="text-xs text-stone-600 mt-2.5 leading-relaxed bg-white/70 p-3 rounded-2xl border border-stone-200/60">
+      地標描述內容...
+    </p>
+    <div id="detail-policy-section" class="mt-2 p-2.5 rounded-2xl bg-amber-50/80 border border-amber-200/80 hidden text-xs">
+      <span class="font-bold text-amber-900 block text-[11px] mb-1">【候選人政見觀點】</span>
+      <span id="detail-policy-text" class="text-amber-800 text-[11px] leading-relaxed"></span>
+    </div>
+  </div>
+
+  <!-- 底部中央米白毛玻璃控制列 (Dock) -->
+  <div class="absolute bottom-3 md:bottom-4 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1.5 w-[94%] max-w-3xl pointer-events-none">
+    <span class="text-[11px] font-semibold tracking-widest text-slate-700/80 drop-shadow-sm select-none">
+      拖曳旋轉 · 滾輪縮放 · 點一格開始探索
+    </span>
+
+    <div class="glass-card-warm w-full rounded-3xl px-4 py-2 pointer-events-auto flex flex-wrap items-center justify-between gap-3 shadow-xl">
+      <!-- 5 個圓角膠囊開關按鈕 -->
+      <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+        <button id="btn-toggle-labels" class="dock-btn active text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 whitespace-nowrap shadow-sm">
+          <span>▭</span><span>名牌</span>
+        </button>
+        <button id="btn-toggle-links" class="dock-btn active text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 whitespace-nowrap shadow-sm">
+          <span>☍</span><span>連結線</span>
+        </button>
+        <button id="btn-toggle-train" class="dock-btn active text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 whitespace-nowrap shadow-sm">
+          <span>🚆</span><span>林鐵</span>
+        </button>
+        <button id="btn-toggle-autorotate" class="dock-btn text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 whitespace-nowrap shadow-sm">
+          <span>↻</span><span>自轉</span>
+        </button>
+        <button id="btn-toggle-topview" class="dock-btn text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 whitespace-nowrap shadow-sm">
+          <span id="view-icon">⊕</span><span id="view-text">鳥瞰</span>
+        </button>
+      </div>
+
+      <!-- 右側時間顯示、拉桿與播放按鈕 -->
+      <div class="flex items-center gap-2.5 bg-white/80 px-3 py-1.5 rounded-2xl border border-stone-200/80 ml-auto shadow-sm">
+        <button id="btn-time-play" title="播放 / 暫停日夜流動" class="w-6 h-6 rounded-full bg-[#f8d7d2] text-[#c83e2b] flex items-center justify-center text-xs font-black transition hover:scale-105 active:scale-95 shadow-sm">
+          ▶
+        </button>
+        <span id="time-display" class="font-mono font-black text-xs text-stone-700 min-w-[42px] text-center">10:00</span>
+        <input id="time-slider" type="range" min="360" max="1380" step="10" value="600" class="time-slider w-20 sm:w-28 cursor-pointer">
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* =====================================================================
+       1. 資料定義：18 個代表性地標、分類主題與候選人政見
+       ===================================================================== */
+    const CATEGORIES = {
+      railway: { name: '林業鐵道', color: '#d4822a' },
+      flavor:  { name: '舊城滋味', color: '#d15b3e' },
+      park:    { name: '公園綠水', color: '#3b8a5a' },
+      culture: { name: '藝文再生', color: '#7859b8' },
+      city:    { name: '城市發展', color: '#6b6057' }
+    };
+
+    const CANDIDATES = {
+      c1: { id: 'c1', name: '黃敏惠', color: '#2563eb', tag: '十大旗艦' },
+      c2: { id: 'c2', name: '李俊俋', color: '#059669', tag: '三心二軸' }
+    };
+
+    const LANDMARKS_DATA = [
+      // 林業鐵道 (#d4822a)
+      { 
+        id: 'beimen', name: '北門驛', category: 'railway', grid: [1, -2], links: ['yushan', 'hinoki', 'depot'], 
+        desc: '阿里山森林鐵路起點車站，日治時期經典木造黑瓦與高挑雨淋板外觀，散發濃郁檜木香氣。',
+        policies: [
+          { candidate: 'c1', title: '文化新絲路', text: '串接北門驛與鐵道軸帶，推動林鐵文創園區國際觀光品牌。' },
+          { candidate: 'c2', title: '林鐵文化廊道升級', text: '優化周邊人行徒步空間，結合在地社區導覽經濟。' }
+        ]
+      },
+      { 
+        id: 'yushan', name: '玉山旅社', category: 'railway', grid: [2, -2], links: ['beimen', 'hinoki', 'oldprison'], 
+        desc: '超過60年歷史的日式兩層木造老旅社，歷經民間修復重生為背包客棧與咖啡文創基地。',
+        policies: [
+          { candidate: 'c1', title: '舊屋力 2.0', text: '加碼補助老屋活化與青年返鄉修繕微型創生基地。' }
+        ]
+      },
+      { 
+        id: 'depot', name: '阿里山林鐵車庫', category: 'railway', grid: [0, -3], links: ['beimen', 'sawmill', 'songofforest'], 
+        desc: '林鐵火車調度中心與大本營，停放經典紅黑相間的 Shay 蒸氣火車頭與老車廂轉盤。',
+        policies: [
+          { candidate: 'c2', title: '鐵道博物館園區聯動', text: '爭取中央經費提升車庫園區展示體驗與親子互動設施。' }
+        ]
+      },
+      { 
+        id: 'hinoki', name: '檜意森活村', category: 'railway', grid: [2, -1], links: ['beimen', 'yushan', 'fountain'], 
+        desc: '全台最大日式官舍建築群，29棟珍貴檜木日式平房群落，全區充滿悠閒和風庭園情調。',
+        policies: [
+          { candidate: 'c1', title: '木都 3.0 品牌國際化', text: '深化檜木工藝品牌，拓展夜間觀光與市集經濟。' },
+          { candidate: 'c2', title: '商圈共榮綠色交通', text: '規劃低碳電動公車循環路網，改善周邊假日停車壅塞。' }
+        ]
+      },
+      { 
+        id: 'sawmill', name: '嘉義製材所', category: 'railway', grid: [-1, -3], links: ['depot', 'songofforest', 'industry'], 
+        desc: '曾號稱「東洋第一製材所」，具備巨大鋸齒形雙坡屋頂、歷史乾燥室與圓木巨材儲木池。',
+        policies: [
+          { candidate: 'c1', title: '產業遺產活化', text: '結合地下動力室歷史挖掘，打造成林業工藝實作教育樞紐。' }
+        ]
+      },
+
+      // 舊城滋味 (#d15b3e)
+      { 
+        id: 'fountain', name: '中央噴水池', category: 'flavor', grid: [0, 0], links: ['nightmarket', 'station', 'cityhall', 'hinoki'], 
+        desc: '嘉義市精神象徵圓環，中央高挺噴泉湧水，底座矗立投手吳明捷雕像，串連七向放射大道。',
+        policies: [
+          { candidate: 'c1', title: '舊城創新生態圈', text: '以噴水圓環為核心，推動老街活化與數位支付商圈示範。' },
+          { candidate: 'c2', title: '市中心行人友善街廓', text: '重新設計周邊放射路口行人動線，打造真正安全好走的散步商圈。' }
+        ]
+      },
+      { 
+        id: 'nightmarket', name: '文化路夜市', category: 'flavor', grid: [0, 1], links: ['fountain', 'eastmarket', 'cityhall'], 
+        desc: '嘉義經典美食不夜城，彩色棚架林立，砂鍋魚頭、豆花、火雞肉飯等嘉義道地滋味齊聚。',
+        policies: [
+          { candidate: 'c1', title: '夜經濟特色商圈', text: '導入國際觀光指標與夜間環境衛生升級計劃。' }
+        ]
+      },
+      { 
+        id: 'eastmarket', name: '東市場', category: 'flavor', grid: [2, 1], links: ['nightmarket', 'chenghuang', 'pottery'], 
+        desc: '嘉義市民的大廚房，建於明治時期的挑高檜木架構老市場，洋溢滿滿的人情味與古早小吃。',
+        policies: [
+          { candidate: 'c2', title: '百年公有市場現代化', text: '改善木構防火安全與現代化低溫冷鏈設施，保存常民飲食文化。' }
+        ]
+      },
+      { 
+        id: 'chenghuang', name: '嘉義城隍廟', category: 'flavor', grid: [2, 2], links: ['eastmarket', 'lantan', 'pottery'], 
+        desc: '國定古蹟廟宇，繁複精美的歇山重簷紅廟頂、龍柱雕刻與交趾陶壁飾，香火鼎盛三百載。',
+        policies: [
+          { candidate: 'c1', title: '宗教文化觀光季', text: '結合中元祭典與國際民俗踩街，發揚地方無形文化資產。' }
+        ]
+      },
+
+      // 公園綠水 (#3b8a5a)
+      { 
+        id: 'sunshooter', name: '射日塔', category: 'park', grid: [4, -1], links: ['stadium', 'pottery', 'oldprison'], 
+        desc: '座落於嘉義公園內，62公尺高聳神木造形雕空圓塔，頂層360度環景眺望阿里山脈與市容。',
+        policies: [
+          { candidate: 'c1', title: '公園綠意新亮點', text: '串聯嘉義公園百年景觀與射日塔夜間景觀光雕。' }
+        ]
+      },
+      { 
+        id: 'lantan', name: '蘭潭風景區', category: 'park', grid: [5, 2], links: ['stadium', 'chenghuang'], 
+        desc: '嘉義之肺「蘭潭泛月」，澄澈水藍波光粼粼，設有浪漫月影潭心與壯闊水舞噴泉造景。',
+        policies: [
+          { candidate: 'c1', title: '蘭潭水岸創生', text: '升級水舞光影秀與環潭低碳自行車休閒道。' },
+          { candidate: 'c2', title: '親水環境生態復育', text: '強化環潭集水區水質保護與生態導覽教室建置。' }
+        ]
+      },
+      { 
+        id: 'stadium', name: '市立棒球場', category: 'park', grid: [4, 0], links: ['sunshooter', 'lantan', 'pottery'], 
+        desc: 'KANO 棒球傳奇發源地，擁有圓弧看台與標準綠茵內外野，承載百年熱血棒球魂。',
+        policies: [
+          { candidate: 'c1', title: 'KANO 棒球運動園區', text: '引進職業賽事與棒球嘉年華，優化球員休息設施。' }
+        ]
+      },
+
+      // 藝文再生 (#7859b8)
+      { 
+        id: 'songofforest', name: '森林之歌', category: 'culture', grid: [-2, -2], links: ['depot', 'sawmill', 'artmuseum', 'station'], 
+        desc: '藝術家王文志創作之大型地景，由木材、鐵軌與黃藤編織而成的蛋形巨蛋，內部如光影神殿。',
+        policies: [
+          { candidate: 'c2', title: '光影藝術節聚落', text: '以森林之歌為軸心，定期舉辦全國公共藝術季。' }
+        ]
+      },
+      { 
+        id: 'artmuseum', name: '市立美術館', category: 'culture', grid: [-2, 0], links: ['station', 'creativepark', 'songofforest'], 
+        desc: '新舊共融的典範建築，日治菸酒公賣局古典紅磚圓角樓與現代弧形木構玻璃帷幕交會。',
+        policies: [
+          { candidate: 'c1', title: '畫都嘉義國際策展', text: '加強陳澄波等藝術大師作品典藏，促進跨國藝術家駐村。' }
+        ]
+      },
+      { 
+        id: 'oldprison', name: '嘉義舊監獄', category: 'culture', grid: [3, -3], links: ['yushan', 'sunshooter'], 
+        desc: '全球僅存兩座之一的「放射狀賓夕凡尼亞式」扇形監獄，中央台向外輻射三座牢房長廊。',
+        policies: [
+          { candidate: 'c1', title: '舊監修護與沉浸劇場', text: '推動國定古蹟全區修復，發展沉浸式實境體驗。' }
+        ]
+      },
+      { 
+        id: 'creativepark', name: '文創產業園區', category: 'culture', grid: [-2, 1], links: ['artmuseum', 'station', 'hsr'], 
+        desc: '前身為台灣最早生產高粱酒之嘉義酒廠，保留高聳紅磚蒸餾煙囪與現代化工業文創空間。',
+        policies: [
+          { candidate: 'c2', title: '青年創業育成大基地', text: '降低青年文創進駐租金門檻，提供一站式創投輔導。' }
+        ]
+      },
+      { 
+        id: 'pottery', name: '交趾陶館', category: 'culture', grid: [3, 0], links: ['sunshooter', 'stadium', 'eastmarket'], 
+        desc: '傳承嘉義「台灣絕技」交趾陶國寶工藝，立體艷麗的五彩釉色捏塑展現非凡廟宇與雕塑美學。',
+        policies: [
+          { candidate: 'c1', title: '工藝傳承與校園推廣', text: '推動傳統交趾陶藝師技藝傳承與國中小藝術紮根。' }
+        ]
+      },
+
+      // 城市發展 (#6b6057)
+      { 
+        id: 'station', name: '嘉義車站', category: 'city', grid: [-1, 0], links: ['fountain', 'artmuseum', 'creativepark', 'songofforest'], 
+        desc: '古典折衷主義洋風車站，中央高敞弧形雨遮與立體方鐘塔，是無數遊子旅人進入木都的門戶。',
+        policies: [
+          { candidate: 'c1', title: '鐵路高架化大縫合', text: '推動嘉義大車站計畫，消弭鐵道隔閡，活化前後站黃金廊帶。' },
+          { candidate: 'c2', title: '以站為本的大眾運輸 TOD', text: '整合高架化車站後方客運與輕軌樞紐，強化轉乘流暢度。' }
+        ]
+      },
+      { 
+        id: 'cityhall', name: '嘉義市政府', category: 'city', grid: [1, 1], links: ['fountain', 'nightmarket', 'eastmarket'], 
+        desc: '嘉義市政推動核心，穩重對稱的幾何現代大樓與迎賓開闊前庭花園。',
+        policies: [
+          { candidate: 'c1', title: '樂齡勇壯智慧城', text: '全面推動銀髮友善服務與智慧市政大數據中心。' },
+          { candidate: 'c2', title: '青年留鄉加碼補助', text: '設立跨局處青年事務委員會，加速社會住宅興建。' }
+        ]
+      },
+      { 
+        id: 'hsr', name: '往高鐵嘉義站', category: 'city', grid: [-5, 1], links: ['creativepark', 'industry'], 
+        desc: '高架輕軌與高鐵快線引道，現代流線型子彈列車象徵高鐵一日生活圈的快速樞紐連結。',
+        policies: [
+          { candidate: 'c1', title: '爭取輕軌聯通計畫', text: '全力爭取中央全額補助高鐵嘉義站至市區輕軌捷運系統。' },
+          { candidate: 'c2', title: '捷運系統具體落實', text: '優先推動 BRT 專用道升級並規劃輕軌先導公車網絡。' }
+        ]
+      },
+      { 
+        id: 'industry', name: '北港路・後湖工業區', category: 'city', grid: [-4, -3], links: ['hsr', 'sawmill'], 
+        desc: '高科技精密機械、食品生技與現代物流廠房聚落，帶動大嘉義產業升級的經濟動能。',
+        policies: [
+          { candidate: 'c1', title: '後湖智慧健康微園區', text: '引進精密生技醫療產業，帶動高薪就業機會。' },
+          { candidate: 'c2', title: '科技物流產學聚落', text: '結合周邊大專院校研發能量，改善工業區公共設施。' }
+        ]
+      }
+    ];
+
+    /* =====================================================================
+       2. THREE.JS 基礎環境設置
+       ===================================================================== */
+    const container = document.getElementById('canvas-container');
+    const labelsLayer = document.getElementById('labels-layer');
+
+    const scene = new THREE.Scene();
+    const skyDefaultColor = new THREE.Color('#bceeff');
+    scene.background = skyDefaultColor.clone();
+    scene.fog = new THREE.FogExp2('#bceeff', 0.016);
+
+    const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 160);
+    const DEFAULT_CAM_POS = new THREE.Vector3(16, 18, 22);
+    const TOPVIEW_CAM_POS = new THREE.Vector3(0.01, 35, 0.01);
+    camera.position.copy(DEFAULT_CAM_POS);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.maxPolarAngle = Math.PI / 2 - 0.06;
+    controls.minDistance = 8;
+    controls.maxDistance = 60;
+    controls.target.set(0, 0, 0);
+
+    /* 燈光配置 */
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+    scene.add(ambientLight);
+
+    const sunLight = new THREE.DirectionalLight(0xfff5e6, 0.95);
+    sunLight.position.set(18, 30, 16);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.camera.near = 1;
+    sunLight.shadow.camera.far = 70;
+    const d = 14;
+    sunLight.shadow.camera.left = -d;
+    sunLight.shadow.camera.right = d;
+    sunLight.shadow.camera.top = d;
+    sunLight.shadow.camera.bottom = -d;
+    sunLight.shadow.bias = -0.0006;
+    scene.add(sunLight);
+
+    const fillLight = new THREE.DirectionalLight(0xbbe7ff, 0.35);
+    fillLight.position.set(-15, 12, -15);
+    scene.add(fillLight);
+
+    const nightTownLight = new THREE.PointLight(0xffaa44, 0, 16);
+    nightTownLight.position.set(0, 2.5, 0);
+    scene.add(nightTownLight);
+
+    /* =====================================================================
+       3. 建立圓形暖沙色基座與棋盤島嶼網格
+       ===================================================================== */
+    const BASE_RADIUS = 11;
+    const BASE_HEIGHT = 1.2;
+    const GRID_EXTENT = 7;
+    const TILE_SIZE = 1.28;
+    const TILE_HEIGHT = 0.16;
+    const MAX_CHESS_RADIUS = 6.6;
+
+    const baseGroup = new THREE.Group();
+    scene.add(baseGroup);
+
+    // 圓形暖沙色底座 (CylinderGeometry，半徑 11，顏色 #d9b88c)
+    const baseGeo = new THREE.CylinderGeometry(BASE_RADIUS, BASE_RADIUS + 0.3, BASE_HEIGHT, 64);
+    const baseMat = new THREE.MeshStandardMaterial({
+      color: 0xd9b88c,
+      roughness: 0.85,
+      metalness: 0.05
+    });
+    const islandBaseMesh = new THREE.Mesh(baseGeo, baseMat);
+    islandBaseMesh.position.y = -BASE_HEIGHT / 2;
+    islandBaseMesh.receiveShadow = true;
+    baseGroup.add(islandBaseMesh);
+
+    const baseRimGeo = new THREE.CylinderGeometry(BASE_RADIUS + 0.6, BASE_RADIUS + 0.8, 0.25, 64);
+    const baseRimMat = new THREE.MeshStandardMaterial({ color: 0xc8a476, roughness: 0.9 });
+    const baseRimMesh = new THREE.Mesh(baseRimGeo, baseRimMat);
+    baseRimMesh.position.y = -BASE_HEIGHT - 0.1;
+    baseRimMesh.receiveShadow = true;
+    baseGroup.add(baseRimMesh);
+
+    // 棋盤網格群組
+    const tilesGroup = new THREE.Group();
+    scene.add(tilesGroup);
+
+    const tileCreamMat = new THREE.MeshStandardMaterial({ color: 0xf2ebd9, roughness: 0.7 });
+    const tileGreenMat = new THREE.MeshStandardMaterial({ color: 0xcbe096, roughness: 0.8 });
+    const tileGeo = new THREE.BoxGeometry(TILE_SIZE * 0.96, TILE_HEIGHT, TILE_SIZE * 0.96);
+
+    const landmarkOccupied = new Set(LANDMARKS_DATA.map(d => `${d.grid[0]},${d.grid[1]}`));
+
+    // 散落小房屋與樹木幾何
+    const houseBodyGeo = new THREE.BoxGeometry(0.28, 0.28, 0.28);
+    const houseBodyMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.6 });
+    const houseRoofGeo = new THREE.ConeGeometry(0.25, 0.22, 4);
+    const houseChimneyGeo = new THREE.BoxGeometry(0.06, 0.16, 0.06);
+
+    const treeTrunkGeo = new THREE.CylinderGeometry(0.04, 0.05, 0.2, 6);
+    const treeFoliageGeo = new THREE.ConeGeometry(0.2, 0.42, 6);
+    const treeFoliageRoundGeo = new THREE.SphereGeometry(0.2, 8, 8);
+
+    const houseRoofMat1 = new THREE.MeshStandardMaterial({ color: 0xe07a5f, roughness: 0.6 });
+    const houseRoofMat2 = new THREE.MeshStandardMaterial({ color: 0x4a6b82, roughness: 0.6 });
+    const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x7a5230, roughness: 0.9 });
+    const treeFoliageMat1 = new THREE.MeshStandardMaterial({ color: 0x4f8f4f, roughness: 0.8 });
+    const treeFoliageMat2 = new THREE.MeshStandardMaterial({ color: 0x6ca359, roughness: 0.8 });
+
+    for (let x = -GRID_EXTENT; x <= GRID_EXTENT; x++) {
+      for (let z = -GRID_EXTENT; z <= GRID_EXTENT; z++) {
+        const distFromCenter = Math.sqrt(x * x + z * z);
+        if (distFromCenter <= MAX_CHESS_RADIUS) {
+          const isCream = (x + z) % 2 === 0;
+          const tile = new THREE.Mesh(tileGeo, isCream ? tileCreamMat : tileGreenMat);
+          tile.position.set(x * TILE_SIZE, TILE_HEIGHT / 2, z * TILE_SIZE);
+          tile.receiveShadow = true;
+          tilesGroup.add(tile);
+
+          const key = `${x},${z}`;
+          if (!landmarkOccupied.has(key)) {
+            const rand = Math.random();
+            if (rand < 0.26) {
+              const houseGroup = new THREE.Group();
+              const body = new THREE.Mesh(houseBodyGeo, houseBodyMat);
+              body.position.y = 0.14;
+              body.castShadow = true;
+              body.receiveShadow = true;
+              houseGroup.add(body);
+
+              const roofMat = Math.random() > 0.5 ? houseRoofMat1 : houseRoofMat2;
+              const roof = new THREE.Mesh(houseRoofGeo, roofMat);
+              roof.position.y = 0.28 + 0.12;
+              roof.rotation.y = Math.PI / 4;
+              roof.castShadow = true;
+              houseGroup.add(roof);
+
+              if (Math.random() > 0.5) {
+                const chimney = new THREE.Mesh(houseChimneyGeo, houseBodyMat);
+                chimney.position.set(0.09, 0.35, 0.08);
+                chimney.castShadow = true;
+                houseGroup.add(chimney);
+              }
+
+              houseGroup.position.set(
+                x * TILE_SIZE + (Math.random() - 0.5) * 0.4,
+                TILE_HEIGHT,
+                z * TILE_SIZE + (Math.random() - 0.5) * 0.4
+              );
+              houseGroup.rotation.y = (Math.floor(Math.random() * 4) * Math.PI) / 2;
+              tilesGroup.add(houseGroup);
+            } else if (rand < 0.58) {
+              const treeGroup = new THREE.Group();
+              const trunk = new THREE.Mesh(treeTrunkGeo, treeTrunkMat);
+              trunk.position.y = 0.1;
+              trunk.castShadow = true;
+              treeGroup.add(trunk);
+
+              const isRound = Math.random() > 0.6;
+              const foliage = new THREE.Mesh(
+                isRound ? treeFoliageRoundGeo : treeFoliageGeo,
+                Math.random() > 0.5 ? treeFoliageMat1 : treeFoliageMat2
+              );
+              foliage.position.y = isRound ? 0.3 : 0.38;
+              foliage.castShadow = true;
+              treeGroup.add(foliage);
+
+              treeGroup.position.set(
+                x * TILE_SIZE + (Math.random() - 0.5) * 0.5,
+                TILE_HEIGHT,
+                z * TILE_SIZE + (Math.random() - 0.5) * 0.5
+              );
+              const scale = 0.75 + Math.random() * 0.45;
+              treeGroup.scale.set(scale, scale, scale);
+              tilesGroup.add(treeGroup);
+            }
+          }
+        }
+      }
+    }
+
+    /* =====================================================================
+       4. 建立 18 個嘉義地標專屬微縮 3D 模型
+       ===================================================================== */
+    const landmarksGroup = new THREE.Group();
+    scene.add(landmarksGroup);
+
+    const landmarkMeshMap = new Map();
+    const clickableObjects = [];
+
+    const mats = {
+      woodDark: new THREE.MeshStandardMaterial({ color: 0x3d2817, roughness: 0.9 }),
+      woodPlank: new THREE.MeshStandardMaterial({ color: 0x8a5b32, roughness: 0.8 }),
+      tileDark: new THREE.MeshStandardMaterial({ color: 0x2b2d2f, roughness: 0.7 }),
+      redBrick: new THREE.MeshStandardMaterial({ color: 0xa8422b, roughness: 0.85 }),
+      templeRed: new THREE.MeshStandardMaterial({ color: 0xba1e1e, roughness: 0.65 }),
+      templeGold: new THREE.MeshStandardMaterial({ color: 0xe5a93c, roughness: 0.4, metalness: 0.3 }),
+      waterBlue: new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.85 }),
+      waterFroth: new THREE.MeshStandardMaterial({ color: 0xe0f2fe, roughness: 0.4 }),
+      whiteWall: new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.6 }),
+      concrete: new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.8 }),
+      ironBlack: new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5, metalness: 0.6 }),
+      trainRed: new THREE.MeshStandardMaterial({ color: 0xd93829, roughness: 0.5 }),
+      glassCyan: new THREE.MeshStandardMaterial({ color: 0x67e8f9, roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.7 }),
+      turfGreen: new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.8 }),
+      dirtBrown: new THREE.MeshStandardMaterial({ color: 0xca8a04, roughness: 0.9 })
+    };
+
+    function buildLandmarkModel(id) {
+      const g = new THREE.Group();
+      switch(id) {
+        case 'beimen': {
+          const base = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.42, 0.55), mats.woodPlank);
+          base.position.y = 0.21;
+          g.add(base);
+          const roof = new THREE.Mesh(new THREE.ConeGeometry(0.72, 0.3, 4), mats.tileDark);
+          roof.position.y = 0.52;
+          roof.rotation.y = Math.PI / 4;
+          roof.scale.set(1.1, 0.9, 0.8);
+          g.add(roof);
+          const platform = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.08, 0.3), mats.concrete);
+          platform.position.set(0, 0.04, 0.42);
+          g.add(platform);
+          break;
+        }
+        case 'yushan': {
+          const floor1 = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.35, 0.6), mats.woodDark);
+          floor1.position.y = 0.175;
+          g.add(floor1);
+          const floor2 = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.38, 0.55), mats.woodPlank);
+          floor2.position.y = 0.525;
+          g.add(floor2);
+          const roof = new THREE.Mesh(new THREE.ConeGeometry(0.55, 0.22, 4), mats.tileDark);
+          roof.position.y = 0.8;
+          roof.rotation.y = Math.PI / 4;
+          g.add(roof);
+          break;
+        }
+        case 'depot': {
+          const turntable = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.06, 24), mats.ironBlack);
+          turntable.position.y = 0.03;
+          g.add(turntable);
+          const boiler = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.45, 12), mats.ironBlack);
+          boiler.rotation.z = Math.PI / 2;
+          boiler.position.set(-0.06, 0.2, 0);
+          g.add(boiler);
+          const cab = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.3, 0.26), mats.trainRed);
+          cab.position.set(0.22, 0.22, 0);
+          g.add(cab);
+          break;
+        }
+        case 'hinoki': {
+          const housesPos = [[-0.26, -0.22], [0.26, -0.22], [-0.26, 0.24], [0.26, 0.24]];
+          housesPos.forEach(([hx, hz]) => {
+            const h = new THREE.Group();
+            const wall = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.22, 0.34), mats.woodPlank);
+            wall.position.y = 0.11;
+            h.add(wall);
+            const r = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.16, 4), mats.tileDark);
+            r.position.y = 0.28;
+            r.rotation.y = Math.PI / 4;
+            h.add(r);
+            h.position.set(hx, 0, hz);
+            g.add(h);
+          });
+          break;
+        }
+        case 'sawmill': {
+          const millBody = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.38, 0.55), mats.woodDark);
+          millBody.position.y = 0.19;
+          g.add(millBody);
+          [-0.24, 0.24].forEach(px => {
+            const sawRoof = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.22, 4), mats.redBrick);
+            sawRoof.position.set(px, 0.46, 0);
+            sawRoof.rotation.y = Math.PI / 4;
+            g.add(sawRoof);
+          });
+          break;
+        }
+        case 'fountain': {
+          const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.58, 0.14, 28), mats.whiteWall);
+          ring.position.y = 0.07;
+          g.add(ring);
+          const water = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.1, 28), mats.waterBlue);
+          water.position.y = 0.09;
+          g.add(water);
+          const coreJet = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.5, 12), mats.waterFroth);
+          coreJet.position.y = 0.32;
+          g.add(coreJet);
+          const splash = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.3, 12), mats.waterFroth);
+          splash.position.y = 0.55;
+          splash.rotation.x = Math.PI;
+          g.add(splash);
+          break;
+        }
+        case 'nightmarket': {
+          const stallColors = [0xef4444, 0xf59e0b, 0x10b981, 0x3b82f6];
+          for (let i = 0; i < 4; i++) {
+            const stall = new THREE.Group();
+            const table = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.14, 0.22), mats.whiteWall);
+            table.position.y = 0.07;
+            stall.add(table);
+            const tent = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.14, 4), new THREE.MeshStandardMaterial({ color: stallColors[i] }));
+            tent.position.y = 0.25;
+            tent.rotation.y = Math.PI / 4;
+            stall.add(tent);
+            stall.position.set((i % 2 === 0 ? -0.28 : 0.28), 0, (i < 2 ? -0.26 : 0.26));
+            g.add(stall);
+          }
+          break;
+        }
+        case 'eastmarket': {
+          const roof = new THREE.Mesh(new THREE.ConeGeometry(0.68, 0.26, 4), mats.redBrick);
+          roof.position.y = 0.6;
+          roof.rotation.y = Math.PI / 4;
+          roof.scale.set(1.2, 0.8, 1.2);
+          g.add(roof);
+          const inside = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.12, 0.5), mats.concrete);
+          inside.position.y = 0.06;
+          g.add(inside);
+          break;
+        }
+        case 'chenghuang': {
+          const base = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.14, 0.75), mats.concrete);
+          base.position.y = 0.07;
+          g.add(base);
+          const mainHall = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.32, 0.6), mats.templeRed);
+          mainHall.position.y = 0.26;
+          g.add(mainHall);
+          const roofLower = new THREE.Mesh(new THREE.ConeGeometry(0.72, 0.2, 4), mats.templeGold);
+          roofLower.position.y = 0.48;
+          roofLower.rotation.y = Math.PI / 4;
+          g.add(roofLower);
+          break;
+        }
+        case 'sunshooter': {
+          const parkBase = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.65, 0.08, 16), mats.turfGreen);
+          parkBase.position.y = 0.04;
+          g.add(parkBase);
+          const towerBody = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 1.35, 18, 1, true), mats.concrete);
+          towerBody.position.y = 0.72;
+          g.add(towerBody);
+          const ring = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.08, 8, 24), mats.whiteWall);
+          ring.rotation.x = Math.PI / 2;
+          ring.position.y = 1.38;
+          g.add(ring);
+          break;
+        }
+        case 'lantan': {
+          const lake = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.14, 0.95), mats.waterBlue);
+          lake.position.y = 0.07;
+          g.add(lake);
+          const arch = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.05, 8, 16, Math.PI), mats.whiteWall);
+          arch.position.set(0.1, 0.14, -0.1);
+          g.add(arch);
+          break;
+        }
+        case 'stadium': {
+          const grandstand = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.62, 0.26, 24, 1, false, 0, Math.PI * 1.5), mats.concrete);
+          grandstand.position.y = 0.13;
+          grandstand.rotation.y = -Math.PI * 0.75;
+          g.add(grandstand);
+          const field = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.1, 24), mats.turfGreen);
+          field.position.y = 0.05;
+          g.add(field);
+          break;
+        }
+        case 'songofforest': {
+          const dome = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 12), mats.woodPlank);
+          dome.position.y = 0.45;
+          dome.scale.set(0.85, 1.25, 0.85);
+          g.add(dome);
+          break;
+        }
+        case 'artmuseum': {
+          const oldBuilding = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.44, 0.48), mats.redBrick);
+          oldBuilding.position.set(-0.2, 0.22, 0);
+          g.add(oldBuilding);
+          const newGlassWing = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.52, 16, 1, false, 0, Math.PI), mats.glassCyan);
+          newGlassWing.rotation.y = Math.PI / 2;
+          newGlassWing.position.set(0.18, 0.26, 0);
+          g.add(newGlassWing);
+          break;
+        }
+        case 'oldprison': {
+          const centerHub = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.2, 0.28, 8), mats.tileDark);
+          centerHub.position.set(0, 0.14, 0.25);
+          g.add(centerHub);
+          [-Math.PI * 0.35, 0, Math.PI * 0.35].forEach(ang => {
+            const corridor = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.2, 0.62), mats.whiteWall);
+            corridor.rotation.y = ang;
+            corridor.position.set(Math.sin(ang) * 0.38, 0.12, 0.25 - Math.cos(ang) * 0.38);
+            g.add(corridor);
+          });
+          break;
+        }
+        case 'creativepark': {
+          const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.13, 1.25, 12), mats.redBrick);
+          chimney.position.set(0.28, 0.625, 0.2);
+          g.add(chimney);
+          const warehouse = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.34, 0.5), mats.concrete);
+          warehouse.position.set(-0.15, 0.17, -0.05);
+          g.add(warehouse);
+          break;
+        }
+        case 'pottery': {
+          const gallery = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.38, 0.6), mats.whiteWall);
+          gallery.position.y = 0.19;
+          g.add(gallery);
+          const deco = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), mats.templeRed);
+          deco.rotation.set(0.4, 0.5, 0.2);
+          deco.position.set(0, 0.48, 0);
+          g.add(deco);
+          break;
+        }
+        case 'station': {
+          const mainHall = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.42, 0.52), mats.whiteWall);
+          mainHall.position.y = 0.21;
+          g.add(mainHall);
+          const tower = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.68, 0.35), mats.whiteWall);
+          tower.position.set(0, 0.34, 0.08);
+          g.add(tower);
+          break;
+        }
+        case 'cityhall': {
+          const centerBlock = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.65, 0.5), mats.whiteWall);
+          centerBlock.position.y = 0.325;
+          g.add(centerBlock);
+          [-0.32, 0.32].forEach(wx => {
+            const wing = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.48, 0.44), mats.concrete);
+            wing.position.set(wx, 0.24, 0);
+            g.add(wing);
+          });
+          break;
+        }
+        case 'hsr': {
+          const viaductDeck = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.08, 1.1), mats.concrete);
+          viaductDeck.position.y = 0.42;
+          g.add(viaductDeck);
+          const trainNose = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.35, 12), mats.whiteWall);
+          trainNose.rotation.x = -Math.PI / 2;
+          trainNose.position.set(0, 0.52, 0.28);
+          g.add(trainNose);
+          break;
+        }
+        case 'industry': {
+          const plant = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.38, 0.55), mats.whiteWall);
+          plant.position.set(-0.1, 0.19, -0.1);
+          g.add(plant);
+          const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.5, 16), mats.concrete);
+          tank.position.set(0.32, 0.25, 0.22);
+          g.add(tank);
+          break;
+        }
+        default: {
+          const generic = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), mats.whiteWall);
+          generic.position.y = 0.3;
+          g.add(generic);
+        }
+      }
+
+      g.traverse(child => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+      return g;
+    }
+
+    /* =====================================================================
+       4.5 候選人政見 3D 彩色旋轉菱形群組 (OctahedronGeometry)
+       ===================================================================== */
+    const policyDiamondsGroup = new THREE.Group();
+    scene.add(policyDiamondsGroup);
+    policyDiamondsGroup.visible = false; // 預設全景模式不顯示
+
+    const diamondGeo = new THREE.OctahedronGeometry(0.28, 0);
+    const diamondMatBlue = new THREE.MeshStandardMaterial({
+      color: 0x2563eb,
+      roughness: 0.25,
+      metalness: 0.5,
+      emissive: 0x1d4ed8,
+      emissiveIntensity: 0.35
+    });
+    const diamondMatGreen = new THREE.MeshStandardMaterial({
+      color: 0x059669,
+      roughness: 0.25,
+      metalness: 0.5,
+      emissive: 0x047857,
+      emissiveIntensity: 0.35
+    });
+
+    const activePolicyDiamonds = [];
+
+    // 實例化所有地標與生成 HTML 標籤
+    LANDMARKS_DATA.forEach(data => {
+      const containerGroup = new THREE.Group();
+      const model = buildLandmarkModel(data.id);
+      containerGroup.add(model);
+
+      const catInfo = CATEGORIES[data.category];
+      const baseMat = new THREE.MeshStandardMaterial({ color: catInfo.color, roughness: 0.6 });
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(1.22, 0.04, 1.22), baseMat);
+      pad.position.y = 0.02;
+      pad.receiveShadow = true;
+      containerGroup.add(pad);
+
+      const worldX = data.grid[0] * TILE_SIZE;
+      const worldZ = data.grid[1] * TILE_SIZE;
+      containerGroup.position.set(worldX, TILE_HEIGHT, worldZ);
+
+      // 隱形射線偵測盒
+      const hitBox = new THREE.Mesh(
+        new THREE.BoxGeometry(1.4, 2.2, 1.4),
+        new THREE.MeshBasicMaterial({ visible: false })
+      );
+      hitBox.position.y = 1.0;
+      hitBox.userData = { landmarkId: data.id };
+      containerGroup.add(hitBox);
+      clickableObjects.push(hitBox);
+
+      landmarksGroup.add(containerGroup);
+
+      // 建立該地標的候選人 3D 菱形 (若有政見)
+      if (data.policies && data.policies.length > 0) {
+        data.policies.forEach((pol, pIdx) => {
+          const mat = pol.candidate === 'c1' ? diamondMatBlue : diamondMatGreen;
+          const diamondMesh = new THREE.Mesh(diamondGeo, mat.clone());
+          
+          // 若有多個候選人政見，左右稍作錯開
+          const offsetX = (data.policies.length > 1) ? (pIdx === 0 ? -0.28 : 0.28) : 0;
+          diamondMesh.position.set(worldX + offsetX, TILE_HEIGHT + 2.0, worldZ);
+          diamondMesh.userData = { landmarkId: data.id, policy: pol, candidate: pol.candidate };
+          
+          policyDiamondsGroup.add(diamondMesh);
+          activePolicyDiamonds.push(diamondMesh);
+          clickableObjects.push(diamondMesh);
+        });
+      }
+
+      // 建立 HTML 3D 浮動白色圓角名牌
+      const labelDiv = document.createElement('div');
+      labelDiv.className = 'landmark-label glass-card-warm rounded-full px-2.5 py-1 flex items-center gap-1.5 shadow-md text-stone-800 text-[11px] font-bold select-none';
+      labelDiv.id = `label-${data.id}`;
+      labelDiv.innerHTML = `
+        <span class="w-2 h-2 rounded-full inline-block" style="background-color: ${catInfo.color}"></span>
+        <span class="tracking-wide">${data.name}</span>
+      `;
+      labelsLayer.appendChild(labelDiv);
+
+      labelDiv.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectLandmark(data.id, true);
+      });
+
+      landmarkMeshMap.set(data.id, {
+        data: data,
+        group: containerGroup,
+        model: model,
+        labelElement: labelDiv,
+        targetPos: new THREE.Vector3(worldX, TILE_HEIGHT + 1.2, worldZ)
+      });
+    });
+
+    /* =====================================================================
+       4.6 阿里山林鐵 3D 軌道、立體枕木與前進小火車
+       ===================================================================== */
+    const railwayGroup = new THREE.Group();
+    scene.add(railwayGroup);
+
+    const railwayPoints = [
+      new THREE.Vector3(-1.4 * TILE_SIZE, TILE_HEIGHT + 0.05, 0.2 * TILE_SIZE),
+      new THREE.Vector3(-2.2 * TILE_SIZE, TILE_HEIGHT + 0.05, -1.2 * TILE_SIZE),
+      new THREE.Vector3(-2.1 * TILE_SIZE, TILE_HEIGHT + 0.05, -2.2 * TILE_SIZE),
+      new THREE.Vector3(-1.0 * TILE_SIZE, TILE_HEIGHT + 0.05, -3.2 * TILE_SIZE),
+      new THREE.Vector3(0.0 * TILE_SIZE, TILE_HEIGHT + 0.05, -3.3 * TILE_SIZE),
+      new THREE.Vector3(1.2 * TILE_SIZE, TILE_HEIGHT + 0.05, -2.4 * TILE_SIZE),
+      new THREE.Vector3(1.6 * TILE_SIZE, TILE_HEIGHT + 0.05, -1.2 * TILE_SIZE),
+      new THREE.Vector3(0.6 * TILE_SIZE, TILE_HEIGHT + 0.05, -0.4 * TILE_SIZE),
+      new THREE.Vector3(-0.6 * TILE_SIZE, TILE_HEIGHT + 0.05, 0.1 * TILE_SIZE)
+    ];
+
+    const railCurve = new THREE.CatmullRomCurve3(railwayPoints, true, 'centripetal', 0.2);
+
+    const railTubeMat = new THREE.MeshStandardMaterial({ color: 0x5a626a, roughness: 0.4, metalness: 0.8 });
+    const railSampleCount = 180;
+    const leftRailPts = [];
+    const rightRailPts = [];
+    const railGauge = 0.14;
+
+    for (let i = 0; i <= railSampleCount; i++) {
+      const u = i / railSampleCount;
+      const pt = railCurve.getPointAt(u);
+      const tangent = railCurve.getTangentAt(u);
+      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+
+      leftRailPts.push(pt.clone().addScaledVector(normal, railGauge));
+      rightRailPts.push(pt.clone().addScaledVector(normal, -railGauge));
+    }
+
+    const leftRailCurve = new THREE.CatmullRomCurve3(leftRailPts, true);
+    const rightRailCurve = new THREE.CatmullRomCurve3(rightRailPts, true);
+    railwayGroup.add(new THREE.Mesh(new THREE.TubeGeometry(leftRailCurve, 140, 0.022, 6, true), railTubeMat));
+    railwayGroup.add(new THREE.Mesh(new THREE.TubeGeometry(rightRailCurve, 140, 0.022, 6, true), railTubeMat));
+
+    const sleeperGeo = new THREE.BoxGeometry(0.38, 0.032, 0.09);
+    const sleeperMat = new THREE.MeshStandardMaterial({ color: 0x4a3525, roughness: 0.95 });
+    for (let i = 0; i < 110; i++) {
+      const u = i / 110;
+      const pt = railCurve.getPointAt(u);
+      const tangent = railCurve.getTangentAt(u);
+      const sleeper = new THREE.Mesh(sleeperGeo, sleeperMat);
+      sleeper.position.copy(pt);
+      sleeper.position.y -= 0.015;
+      sleeper.rotation.y = Math.atan2(tangent.x, tangent.z) + Math.PI / 2;
+      sleeper.receiveShadow = true;
+      railwayGroup.add(sleeper);
+    }
+
+    // 小火車模型
+    const trainGroup = new THREE.Group();
+    railwayGroup.add(trainGroup);
+
+    const engineGroup = new THREE.Group();
+    const trainRedMat = new THREE.MeshStandardMaterial({ color: 0xd13030, roughness: 0.4 });
+    const trainWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+    const trainBlackMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.6 });
+
+    const engineBody = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 0.52), trainRedMat);
+    engineBody.position.y = 0.16;
+    engineBody.castShadow = true;
+    engineGroup.add(engineBody);
+
+    const engineStripe = new THREE.Mesh(new THREE.BoxGeometry(0.245, 0.04, 0.525), trainWhiteMat);
+    engineStripe.position.y = 0.15;
+    engineGroup.add(engineStripe);
+
+    const engineCab = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.16, 0.24), trainBlackMat);
+    engineCab.position.set(0, 0.3, -0.06);
+    engineGroup.add(engineCab);
+
+    trainGroup.add(engineGroup);
+
+    const carriageGroup = new THREE.Group();
+    const carBody = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.2, 0.44), trainRedMat);
+    carBody.position.y = 0.15;
+    carBody.castShadow = true;
+    carriageGroup.add(carBody);
+    trainGroup.add(carriageGroup);
+
+    let trainProgress = 0.0;
+    const TRAIN_SPEED = 0.024;
+    const CARRIAGE_OFFSET = 0.042;
+
+    /* =====================================================================
+       4.7 地標間紅色虛線連結線網絡
+       ===================================================================== */
+    const linksGroup = new THREE.Group();
+    scene.add(linksGroup);
+
+    const linkMeshList = [];
+    const registeredPairs = new Set();
+
+    const linkLineMatDefault = new THREE.LineDashedMaterial({
+      color: 0xd15b3e,
+      dashSize: 0.18,
+      gapSize: 0.12,
+      linewidth: 1.5,
+      transparent: true,
+      opacity: 0.65
+    });
+
+    LANDMARKS_DATA.forEach(source => {
+      if (!source.links) return;
+      const sItem = landmarkMeshMap.get(source.id);
+      if (!sItem) return;
+
+      source.links.forEach(targetId => {
+        const pairKey = [source.id, targetId].sort().join('--');
+        if (registeredPairs.has(pairKey)) return;
+        registeredPairs.add(pairKey);
+
+        const tItem = landmarkMeshMap.get(targetId);
+        if (!tItem) return;
+
+        const pA = sItem.group.position.clone();
+        pA.y += 0.25;
+        const pB = tItem.group.position.clone();
+        pB.y += 0.25;
+
+        const dist = pA.distanceTo(pB);
+        const midPoint = pA.clone().lerp(pB, 0.5);
+        midPoint.y += Math.min(1.4, Math.max(0.35, dist * 0.22));
+
+        const curve = new THREE.QuadraticBezierCurve3(pA, midPoint, pB);
+        const points = curve.getPoints(24);
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+
+        const line = new THREE.Line(geometry, linkLineMatDefault.clone());
+        line.computeLineDistances();
+        line.userData = { sourceId: source.id, targetId: targetId };
+
+        linksGroup.add(line);
+        linkMeshList.push(line);
+      });
+    });
+
+    function updateLinksHighlight(selectedId) {
+      if (!selectedId) {
+        linkMeshList.forEach(line => {
+          line.material.color.setHex(0xd15b3e);
+          line.material.opacity = 0.65;
+          line.material.dashSize = 0.18;
+          line.material.gapSize = 0.12;
+          line.visible = isLinksVisible;
+        });
+        return;
+      }
+
+      linkMeshList.forEach(line => {
+        const isConnected = (line.userData.sourceId === selectedId || line.userData.targetId === selectedId);
+        if (isConnected) {
+          line.material.color.setHex(0xc83e2b);
+          line.material.opacity = 1.0;
+          line.material.dashSize = 0.25;
+          line.material.gapSize = 0.08;
+          line.visible = true;
+        } else {
+          line.material.color.setHex(0x94a3b8);
+          line.material.opacity = 0.12;
+          line.visible = isLinksVisible;
+        }
+      });
+    }
+
+    /* =====================================================================
+       5. 互動與鏡頭、卡片控制邏輯
+       ===================================================================== */
+    let currentSelectedId = null;
+    let targetCameraLookAt = new THREE.Vector3(0, 0, 0);
+    let targetCameraPos = DEFAULT_CAM_POS.clone();
+    let isTransitioningCamera = false;
+    let isAutoRotating = false;
+    let isTopView = false;
+    let isLabelsVisible = true;
+    let isLinksVisible = true;
+    let isTrainVisible = true;
+    let currentMode = 'panorama'; // 'panorama' | 'policy'
+    let currentCandidateFilter = 'all';
+
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    window.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('#main-header-card') || e.target.closest('#city-log-card') || 
+          e.target.closest('#policy-panel') || e.target.closest('#detail-card') || 
+          e.target.closest('.dock-container') || e.target.closest('.landmark-label')) {
+        return;
+      }
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(clickableObjects, false);
+
+      if (intersects.length > 0) {
+        const obj = intersects[0].object;
+        if (obj.userData.policy) {
+          // 點擊政見 3D 菱形
+          showPolicyDetail(obj.userData.landmarkId, obj.userData.policy);
+        } else if (obj.userData.landmarkId) {
+          selectLandmark(obj.userData.landmarkId, true);
+        }
+      } else {
+        deselectCurrent();
+      }
+    });
+
+    function selectLandmark(id, shouldFocusCamera = true) {
+      if (currentSelectedId === id) return;
+
+      deselectCurrent();
+      currentSelectedId = id;
+      const target = landmarkMeshMap.get(id);
+      if (!target) return;
+
+      target.labelElement.classList.add('active');
+
+      const group = target.group;
+      const startTime = performance.now();
+      const initialY = TILE_HEIGHT;
+      const bounceAnim = () => {
+        const elapsed = (performance.now() - startTime) / 1000;
+        if (elapsed < 0.6) {
+          const bounce = Math.sin(elapsed * Math.PI * 3.5) * Math.exp(-elapsed * 5) * 0.35;
+          group.position.y = initialY + bounce;
+          target.model.scale.set(1.0 + bounce * 0.4, 1.0 + bounce * 0.4, 1.0 + bounce * 0.4);
+          requestAnimationFrame(bounceAnim);
+        } else {
+          group.position.y = initialY;
+          target.model.scale.set(1.12, 1.12, 1.12);
+        }
+      };
+      bounceAnim();
+
+      showDetailCard(target.data);
+      updateLinksHighlight(id);
+
+      if (shouldFocusCamera && !isTopView) {
+        const pos = group.position;
+        targetCameraLookAt.set(pos.x, 0.8, pos.z);
+        const offset = camera.position.clone().sub(controls.target).normalize().multiplyScalar(13);
+        targetCameraPos.copy(targetCameraLookAt).add(offset);
+        targetCameraPos.y = Math.max(targetCameraPos.y, 7.5);
+        isTransitioningCamera = true;
+      }
+    }
+
+    function deselectCurrent() {
+      if (!currentSelectedId) return;
+      const current = landmarkMeshMap.get(currentSelectedId);
+      if (current) {
+        current.labelElement.classList.remove('active');
+        current.model.scale.set(1, 1, 1);
+        current.group.position.y = TILE_HEIGHT;
+      }
+      currentSelectedId = null;
+      hideDetailCard();
+      updateLinksHighlight(null);
+    }
+
+    // 詳情卡片更新
+    const detailCard = document.getElementById('detail-card');
+    const detailName = document.getElementById('detail-name');
+    const detailDesc = document.getElementById('detail-desc');
+    const detailCoords = document.getElementById('detail-coords');
+    const detailBadge = document.getElementById('detail-category-badge');
+    const detailIconWrap = document.getElementById('detail-icon-wrap');
+    const detailPolicySection = document.getElementById('detail-policy-section');
+    const detailPolicyText = document.getElementById('detail-policy-text');
+
+    function showDetailCard(data, specificPolicy = null) {
+      const cat = CATEGORIES[data.category];
+      detailName.textContent = data.name;
+      detailDesc.textContent = data.desc;
+      detailCoords.textContent = `GRID [X:${data.grid[0]}, Z:${data.grid[1]}] · CHIAYI CITY 23.48°N`;
+      
+      detailBadge.textContent = cat.name;
+      detailBadge.style.backgroundColor = cat.color;
+      detailIconWrap.style.backgroundColor = cat.color;
+      detailIconWrap.textContent = data.name.charAt(0);
+
+      // 若在政見模式或選取政見
+      if (specificPolicy) {
+        detailPolicySection.classList.remove('hidden');
+        const cand = CANDIDATES[specificPolicy.candidate];
+        detailPolicyText.innerHTML = `<strong>${cand.name}（${specificPolicy.title}）：</strong>${specificPolicy.text}`;
+      } else if (data.policies && data.policies.length > 0 && currentMode === 'policy') {
+        detailPolicySection.classList.remove('hidden');
+        detailPolicyText.innerHTML = data.policies.map(p => {
+          const cand = CANDIDATES[p.candidate];
+          return `<div><strong>${cand.name}·${p.title}：</strong>${p.text}</div>`;
+        }).join('');
+      } else {
+        detailPolicySection.classList.add('hidden');
+      }
+
+      detailCard.classList.remove('opacity-0', 'translate-y-8', 'pointer-events-none');
+    }
+
+    function showPolicyDetail(landmarkId, policy) {
+      selectLandmark(landmarkId, false);
+      const lData = LANDMARKS_DATA.find(d => d.id === landmarkId);
+      if (lData) {
+        showDetailCard(lData, policy);
+        const summary = document.getElementById('policy-summary-box');
+        const cand = CANDIDATES[policy.candidate];
+        summary.innerHTML = `<span class="font-bold text-stone-800">${lData.name} · ${cand.name}【${policy.title}】</span>：${policy.text}`;
+      }
+    }
+
+    function hideDetailCard() {
+      detailCard.classList.add('opacity-0', 'translate-y-8', 'pointer-events-none');
+    }
+
+    document.getElementById('close-detail-btn').addEventListener('click', deselectCurrent);
+
+    /* =====================================================================
+       6. 四角米白毛玻璃卡片互動邏輯
+       ===================================================================== */
+    // 1. 左上角主卡片收合
+    const btnToggleMainCard = document.getElementById('btn-toggle-main-card');
+    const mainCardBody = document.getElementById('main-card-body');
+    const mainCardArrow = document.getElementById('main-card-arrow');
+    let isMainCardOpen = true;
+
+    btnToggleMainCard.addEventListener('click', () => {
+      isMainCardOpen = !isMainCardOpen;
+      if (isMainCardOpen) {
+        mainCardBody.style.maxHeight = '240px';
+        mainCardBody.style.opacity = '1';
+        mainCardBody.classList.remove('mt-0');
+        mainCardBody.classList.add('mt-2.5');
+        mainCardArrow.textContent = '∧';
+      } else {
+        mainCardBody.style.maxHeight = '0px';
+        mainCardBody.style.opacity = '0';
+        mainCardBody.classList.remove('mt-2.5');
+        mainCardBody.classList.add('mt-0');
+        mainCardArrow.textContent = '∨';
+      }
+    });
+
+    // 2. 左下角城市日誌收合
+    const btnToggleLogCard = document.getElementById('btn-toggle-log-card');
+    const cityLogBody = document.getElementById('city-log-body');
+    const logCardArrow = document.getElementById('log-card-arrow');
+    let isLogCardOpen = true;
+
+    btnToggleLogCard.addEventListener('click', () => {
+      isLogCardOpen = !isLogCardOpen;
+      if (isLogCardOpen) {
+        cityLogBody.style.maxHeight = '240px';
+        cityLogBody.style.opacity = '1';
+        cityLogBody.classList.remove('mt-0');
+        cityLogBody.classList.add('mt-2.5');
+        logCardArrow.textContent = '∨';
+      } else {
+        cityLogBody.style.maxHeight = '0px';
+        cityLogBody.style.opacity = '0';
+        cityLogBody.classList.remove('mt-2.5');
+        cityLogBody.classList.add('mt-0');
+        logCardArrow.textContent = '∧';
+      }
+    });
+
+    // 3. 右上角「全景｜政見」模式切換
+    const btnModePanorama = document.getElementById('btn-mode-panorama');
+    const btnModePolicy = document.getElementById('btn-mode-policy');
+    const policyPanel = document.getElementById('policy-panel');
+
+    btnModePanorama.addEventListener('click', () => {
+      if (currentMode === 'panorama') return;
+      currentMode = 'panorama';
+      btnModePanorama.className = 'px-4 py-1.5 rounded-full text-xs font-extrabold tracking-wide transition bg-slate-900 text-white shadow-sm';
+      btnModePolicy.className = 'px-4 py-1.5 rounded-full text-xs font-bold text-stone-600 hover:text-stone-900 transition flex items-center gap-1.5';
+      policyPanel.classList.add('hidden');
+      policyDiamondsGroup.visible = false;
+      if (currentSelectedId) {
+        const t = landmarkMeshMap.get(currentSelectedId);
+        if (t) showDetailCard(t.data);
+      }
+    });
+
+    btnModePolicy.addEventListener('click', () => {
+      if (currentMode === 'policy') return;
+      currentMode = 'policy';
+      btnModePolicy.className = 'px-4 py-1.5 rounded-full text-xs font-extrabold tracking-wide transition bg-amber-600 text-white shadow-sm flex items-center gap-1.5';
+      btnModePanorama.className = 'px-4 py-1.5 rounded-full text-xs font-bold text-stone-600 hover:text-stone-900 transition';
+      policyPanel.classList.remove('hidden');
+      policyDiamondsGroup.visible = true;
+      applyCandidateFilter(currentCandidateFilter);
+    });
+
+    // 候選人篩選按鈕
+    const candidateBtns = document.querySelectorAll('.candidate-btn');
+    candidateBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        candidateBtns.forEach(b => {
+          b.classList.remove('active', 'border-stone-400', 'bg-stone-50');
+          b.classList.add('border-stone-200');
+        });
+        btn.classList.add('active', 'border-stone-400', 'bg-stone-50');
+        currentCandidateFilter = btn.dataset.candidate;
+        applyCandidateFilter(currentCandidateFilter);
+      });
+    });
+
+    function applyCandidateFilter(candId) {
+      activePolicyDiamonds.forEach(d => {
+        if (candId === 'all' || d.userData.candidate === candId) {
+          d.visible = true;
+        } else {
+          d.visible = false;
+        }
+      });
+    }
+
+    // 分類過濾邏輯
+    const filterPills = document.querySelectorAll('.filter-pill');
+    filterPills.forEach(pill => {
+      pill.addEventListener('click', () => {
+        filterPills.forEach(p => {
+          p.classList.remove('active', 'bg-slate-900', 'text-white');
+          p.classList.add('bg-white', 'text-stone-700', 'border-stone-200');
+        });
+        pill.classList.add('active', 'bg-slate-900', 'text-white');
+        pill.classList.remove('bg-white', 'text-stone-700', 'border-stone-200');
+
+        const cat = pill.dataset.category;
+        applyCategoryFilter(cat);
+      });
+    });
+
+    function applyCategoryFilter(cat) {
+      landmarkMeshMap.forEach(({ data, model, labelElement }) => {
+        const matches = (cat === 'all' || data.category === cat);
+        if (matches) {
+          labelElement.classList.remove('dimmed');
+          model.traverse(ch => {
+            if (ch.isMesh && ch.material) {
+              ch.material.opacity = 1.0;
+              ch.material.transparent = false;
+            }
+          });
+        } else {
+          labelElement.classList.add('dimmed');
+          model.traverse(ch => {
+            if (ch.isMesh && ch.material) {
+              ch.material.transparent = true;
+              ch.material.opacity = 0.28;
+            }
+          });
+        }
+      });
+    }
+
+    /* =====================================================================
+       7. 城市日誌 LIVE 動態情境生成系統（依時間軸連動）
+       ===================================================================== */
+    const LOG_TEMPLATES = [
+      { time: 360, place: '蘭潭風景區', text: '晨光穿透月影潭心，環潭步道已聚集許多晨運健走的市民。' },
+      { time: 420, place: '東市場', text: '明治時代檜木大桁架下，牛雜湯與春捲攤升起第一縷溫暖白煙。' },
+      { time: 480, place: '嘉義車站', text: '早班通勤區間車進站，站前弧形雨遮下洋溢著學生與上班族的腳步聲。' },
+      { time: 540, place: '北門驛', text: '林鐵班車鳴笛待發，檜木車廂滿載著準備探訪森林的旅人。' },
+      { time: 600, place: '檜意森活村', text: '日式檜木官舍的緣側灑落斑駁光影，文創店鋪陸續拉開木格拉門。' },
+      { time: 660, place: '中央噴水池', text: '七向圓環車流穿梭不息，吳明捷投手雕像在豔陽下金光耀眼。' },
+      { time: 720, place: '文化路夜市', text: '老字號火雞肉飯飄香，街邊排隊人潮一路延伸至圓環騎樓。' },
+      { time: 800, place: '市立美術館', text: '古典紅磚與現代木構挑高展廳內，陳澄波畫作前駐足著青年學子。' },
+      { time: 900, place: '嘉義製材所', text: '歷史乾燥室外林蔭微風徐徐，原木堆旁傳來孩子們的歡笑聲。' },
+      { time: 980, place: '嘉義公園・射日塔', text: '午後斜陽穿透62米鏤空塔身，頂層觀景台遠眺阿里山脈峰巒疊翠。' },
+      { time: 1050, place: '森林之歌', text: '夕陽將黃藤廊道染成溫暖金橙，蛋形巨蛋宛如鑲嵌在鐵道旁的珍珠。' },
+      { time: 1120, place: '文創產業園區', text: '歷史酒廠紅磚大煙囪映著落日晚霞，戶外廣場音樂會正輕柔開演。' },
+      { time: 1180, place: '文化路夜市', text: '彩色遮陽棚燈火通明，砂鍋魚頭與豆花攤位前香氣四溢、熱鬧非凡。' },
+      { time: 1260, place: '中央噴水池', text: '夜間噴泉燈光水舞湧動，微涼夜風中七向大道閃耀如銀河。' },
+      { time: 1320, place: '嘉義舊監獄', text: '夜幕低垂，放射狀三廊扇形建築在寂靜月色下顯得沉穩莊嚴。' }
+    ];
+
+    const logListContainer = document.getElementById('log-list-container');
+    const logSyncIndicator = document.getElementById('log-sync-indicator');
+
+    function updateCityLogs(currentMinutes) {
+      logSyncIndicator.textContent = formatTime(currentMinutes);
+
+      // 過濾出目前時間點之前的最新 4~5 則情境紀錄
+      let activeLogs = LOG_TEMPLATES.filter(item => item.time <= currentMinutes);
+      if (activeLogs.length < 3) {
+        // 若清晨時間太早，抓取昨夜或清晨日誌填補
+        activeLogs = [...LOG_TEMPLATES.slice(-2), ...activeLogs];
+      }
+      const displayLogs = activeLogs.slice(-4).reverse();
+
+      logListContainer.innerHTML = displayLogs.map((log, index) => {
+        const isLatest = index === 0;
+        return `
+          <div class="p-2 rounded-2xl ${isLatest ? 'bg-amber-100/60 border border-amber-300/70' : 'bg-white/60 border border-stone-200/60'} transition-all">
+            <div class="flex items-center justify-between text-[11px] mb-1">
+              <span class="font-black ${isLatest ? 'text-[#c83e2b]' : 'text-stone-700'} flex items-center gap-1.5">
+                ${isLatest ? '<span class="w-1.5 h-1.5 rounded-full bg-[#c83e2b] live-pulse"></span>' : ''}
+                ${formatTime(log.time)} ${log.place}
+              </span>
+              <span class="text-[10px] text-stone-400 font-mono">${isLatest ? '最新動態' : '情境回顧'}</span>
+            </div>
+            <p class="text-[11px] text-stone-600 leading-snug">${log.text}</p>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function formatTime(minutes) {
+      const h = Math.floor(minutes / 60);
+      const m = Math.floor(minutes % 60);
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    }
+
+    /* =====================================================================
+       8. 底部控制列與天色滑桿系統
+       ===================================================================== */
+    const btnLabels = document.getElementById('btn-toggle-labels');
+    btnLabels.addEventListener('click', () => {
+      isLabelsVisible = !isLabelsVisible;
+      btnLabels.classList.toggle('active', isLabelsVisible);
+      labelsLayer.style.display = isLabelsVisible ? 'block' : 'none';
+    });
+
+    const btnLinks = document.getElementById('btn-toggle-links');
+    btnLinks.addEventListener('click', () => {
+      isLinksVisible = !isLinksVisible;
+      btnLinks.classList.toggle('active', isLinksVisible);
+      linksGroup.visible = isLinksVisible;
+      if (currentSelectedId) updateLinksHighlight(currentSelectedId);
+    });
+
+    const btnTrain = document.getElementById('btn-toggle-train');
+    btnTrain.addEventListener('click', () => {
+      isTrainVisible = !isTrainVisible;
+      btnTrain.classList.toggle('active', isTrainVisible);
+      railwayGroup.visible = isTrainVisible;
+    });
+
+    const btnAutoRotate = document.getElementById('btn-toggle-autorotate');
+    btnAutoRotate.addEventListener('click', () => {
+      isAutoRotating = !isAutoRotating;
+      btnAutoRotate.classList.toggle('active', isAutoRotating);
+      controls.autoRotate = isAutoRotating;
+      controls.autoRotateSpeed = 1.2;
+    });
+
+    const btnTopView = document.getElementById('btn-toggle-topview');
+    const viewIcon = document.getElementById('view-icon');
+    const viewText = document.getElementById('view-text');
+
+    btnTopView.addEventListener('click', () => {
+      isTopView = !isTopView;
+      if (isTopView) {
+        btnTopView.classList.add('active');
+        viewIcon.textContent = '◱';
+        viewText.textContent = '斜角';
+        targetCameraLookAt.set(0, 0, 0);
+        targetCameraPos.copy(TOPVIEW_CAM_POS);
+      } else {
+        btnTopView.classList.remove('active');
+        viewIcon.textContent = '⊕';
+        viewText.textContent = '鳥瞰';
+        targetCameraLookAt.set(0, 0, 0);
+        targetCameraPos.copy(DEFAULT_CAM_POS);
+      }
+      isTransitioningCamera = true;
+    });
+
+    const timeSlider = document.getElementById('time-slider');
+    const timeDisplay = document.getElementById('time-display');
+    const btnTimePlay = document.getElementById('btn-time-play');
+    let isPlayingTime = false;
+    let timePlayInterval = null;
+
+    function applyTimeOfDay(minutes) {
+      timeDisplay.textContent = formatTime(minutes);
+      updateCityLogs(minutes);
+
+      let skyHex = '#bceeff';
+      let sunColorHex = 0xfff5e6;
+      let sunIntensity = 0.95;
+      let ambientIntensity = 0.75;
+      let nightGlow = 0;
+
+      if (minutes < 540) {
+        const t = (minutes - 360) / 180;
+        skyHex = lerpColor('#fedac2', '#bceeff', t);
+        sunColorHex = 0xffe2b8;
+        sunIntensity = THREE.MathUtils.lerp(0.6, 0.95, t);
+        ambientIntensity = THREE.MathUtils.lerp(0.55, 0.75, t);
+      } else if (minutes < 960) {
+        skyHex = '#bceeff';
+        sunColorHex = 0xfff5e6;
+        sunIntensity = 0.95;
+        ambientIntensity = 0.75;
+      } else if (minutes < 1110) {
+        const t = (minutes - 960) / 150;
+        skyHex = lerpColor('#bceeff', '#f5b584', t);
+        sunColorHex = 0xff9c5b;
+        sunIntensity = THREE.MathUtils.lerp(0.95, 0.65, t);
+        ambientIntensity = THREE.MathUtils.lerp(0.75, 0.6, t);
+        nightGlow = t * 0.4;
+      } else if (minutes < 1230) {
+        const t = (minutes - 1110) / 120;
+        skyHex = lerpColor('#f5b584', '#252945', t);
+        sunColorHex = 0x5a6390;
+        sunIntensity = THREE.MathUtils.lerp(0.65, 0.1, t);
+        ambientIntensity = THREE.MathUtils.lerp(0.6, 0.35, t);
+        nightGlow = 0.4 + t * 0.6;
+      } else {
+        const t = (minutes - 1230) / 150;
+        skyHex = lerpColor('#252945', '#121626', t);
+        sunColorHex = 0x333b5c;
+        sunIntensity = 0.08;
+        ambientIntensity = 0.28;
+        nightGlow = 1.0;
+      }
+
+      scene.background.set(skyHex);
+      scene.fog.color.set(skyHex);
+      document.body.style.backgroundColor = skyHex;
+
+      sunLight.color.setHex(sunColorHex);
+      sunLight.intensity = sunIntensity;
+      ambientLight.intensity = ambientIntensity;
+      nightTownLight.intensity = nightGlow * 1.5;
+
+      const sunAngle = ((minutes - 360) / (1380 - 360)) * Math.PI;
+      sunLight.position.x = 22 * Math.cos(sunAngle);
+      sunLight.position.y = Math.max(4, 30 * Math.sin(sunAngle));
+      sunLight.position.z = 16 * Math.sin(sunAngle);
+    }
+
+    function lerpColor(a, b, amount) {
+      const c1 = new THREE.Color(a);
+      const c2 = new THREE.Color(b);
+      c1.lerp(c2, amount);
+      return '#' + c1.getHexString();
+    }
+
+    timeSlider.addEventListener('input', (e) => {
+      applyTimeOfDay(parseFloat(e.target.value));
+    });
+
+    btnTimePlay.addEventListener('click', () => {
+      isPlayingTime = !isPlayingTime;
+      btnTimePlay.textContent = isPlayingTime ? '⏸' : '▶';
+      btnTimePlay.classList.toggle('bg-[#c83e2b]', isPlayingTime);
+      btnTimePlay.classList.toggle('text-white', isPlayingTime);
+      btnTimePlay.classList.toggle('bg-[#f8d7d2]', !isPlayingTime);
+      btnTimePlay.classList.toggle('text-[#c83e2b]', !isPlayingTime);
+
+      if (isPlayingTime) {
+        timePlayInterval = setInterval(() => {
+          let cur = parseFloat(timeSlider.value);
+          cur += 5;
+          if (cur > 1380) cur = 360;
+          timeSlider.value = cur;
+          applyTimeOfDay(cur);
+        }, 100);
+      } else {
+        clearInterval(timePlayInterval);
+      }
+    });
+
+    // 初始化 10:00
+    applyTimeOfDay(600);
+
+    /* =====================================================================
+       9. 每幀更新與主渲染循環 (Render Loop)
+       ===================================================================== */
+    const tempVec = new THREE.Vector3();
+    const halfWidth = window.innerWidth / 2;
+    const halfHeight = window.innerHeight / 2;
+
+    function updateFloatingLabels() {
+      if (!isLabelsVisible) return;
+      const camPos = camera.position;
+      const camDir = new THREE.Vector3();
+      camera.getWorldDirection(camDir);
+
+      landmarkMeshMap.forEach(item => {
+        tempVec.copy(item.targetPos);
+        tempVec.y += 0.8;
+
+        const toPoint = tempVec.clone().sub(camPos);
+        const inFront = toPoint.dot(camDir) > 0;
+
+        if (!inFront) {
+          item.labelElement.style.opacity = '0';
+          return;
+        }
+
+        tempVec.project(camera);
+        const x = (tempVec.x * halfWidth) + halfWidth;
+        const y = -(tempVec.y * halfHeight) + halfHeight;
+
+        item.labelElement.style.left = `${x}px`;
+        item.labelElement.style.top = `${y}px`;
+
+        if (!item.labelElement.classList.contains('dimmed')) {
+          item.labelElement.style.opacity = '1';
+        }
+      });
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    let lastTime = performance.now();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const now = performance.now();
+      const delta = (now - lastTime) / 1000;
+      lastTime = now;
+
+      if (isTransitioningCamera) {
+        controls.target.lerp(targetCameraLookAt, 0.08);
+        camera.position.lerp(targetCameraPos, 0.08);
+        if (controls.target.distanceTo(targetCameraLookAt) < 0.02 && camera.position.distanceTo(targetCameraPos) < 0.05) {
+          controls.target.copy(targetCameraLookAt);
+          camera.position.copy(targetCameraPos);
+          isTransitioningCamera = false;
+        }
+      }
+
+      controls.update();
+
+      // 小火車循軌行駛
+      if (isTrainVisible) {
+        trainProgress = (trainProgress + delta * TRAIN_SPEED) % 1.0;
+        const enginePos = railCurve.getPointAt(trainProgress);
+        const engineTangent = railCurve.getTangentAt(trainProgress);
+        engineGroup.position.copy(enginePos);
+        engineGroup.rotation.y = Math.atan2(engineTangent.x, engineTangent.z);
+
+        let carriageProgress = trainProgress - CARRIAGE_OFFSET;
+        if (carriageProgress < 0) carriageProgress += 1.0;
+        const carriagePos = railCurve.getPointAt(carriageProgress);
+        const carriageTangent = railCurve.getTangentAt(carriageProgress);
+        carriageGroup.position.copy(carriagePos);
+        carriageGroup.rotation.y = Math.atan2(carriageTangent.x, carriageTangent.z);
+      }
+
+      // 動態旋轉候選人 3D 菱形與上下懸浮浮動
+      if (policyDiamondsGroup.visible) {
+        const floatY = Math.sin(now * 0.003) * 0.12;
+        activePolicyDiamonds.forEach(d => {
+          d.rotation.y += delta * 1.6;
+          d.rotation.x = Math.sin(now * 0.002) * 0.2;
+          d.position.y = TILE_HEIGHT + 2.0 + floatY;
+        });
+      }
+
+      // 噴水池動態噴水效果微旋轉
+      const t = now * 0.002;
+      const fountainObj = landmarkMeshMap.get('fountain');
+      if (fountainObj && fountainObj.model.children[2]) {
+        fountainObj.model.children[2].rotation.y = t * 1.5;
+      }
+
+      updateFloatingLabels();
+      renderer.render(scene, camera);
+    }
+
+    window.onload = function () {
+      animate();
+    };
+  </script>
+</body>
+</html>
